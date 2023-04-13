@@ -18,6 +18,7 @@ package plugin
 
 import (
 	"fmt"
+	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"net"
 	"os"
 	"path"
@@ -269,6 +270,18 @@ func (plugin *NvidiaDevicePlugin) GetPreferredAllocation(ctx context.Context, r 
 // Allocate which return list of devices.
 func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
 	responses := pluginapi.AllocateResponse{}
+	devices := plugin.Devices()
+	reqDevice := devices.GetByIndex("index")
+	if reqDevice.IsMigDevice() {
+		// handle mig
+		// nvml.DeviceGetPciInfo(*reqDevice)
+		nvmlDevice, _ := nvml.DeviceGetHandleByUUID(reqDevice.GetUUID())
+		pcieInfo, _ := nvml.DeviceGetPciInfo(nvmlDevice)
+		pcieId := pcieInfo.PciDeviceId
+	} else {
+		// handle gpu
+
+	}
 	for _, req := range reqs.ContainerRequests {
 		// If the devices being allocated are replicas, then (conditionally)
 		// error out if more than one resource is being allocated.
