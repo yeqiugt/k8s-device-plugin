@@ -18,7 +18,6 @@ package plugin
 
 import (
 	"fmt"
-	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"net"
 	"os"
 	"path"
@@ -270,19 +269,13 @@ func (plugin *NvidiaDevicePlugin) GetPreferredAllocation(ctx context.Context, r 
 // Allocate which return list of devices.
 func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
 	responses := pluginapi.AllocateResponse{}
-	devices := plugin.Devices()
-	reqDevice := devices.GetByIndex("index")
-	if reqDevice.IsMigDevice() {
-		// handle mig
-		// nvml.DeviceGetPciInfo(*reqDevice)
-		nvmlDevice, _ := nvml.DeviceGetHandleByUUID(reqDevice.GetUUID())
-		pcieInfo, _ := nvml.DeviceGetPciInfo(nvmlDevice)
-		pcieId := pcieInfo.PciDeviceId
-	} else {
-		// handle gpu
+	defer func() {
+		fmt.Println("bbbbbbbbbbbbbbbbbbbbbbout allocate")
+		fmt.Printf("ccccccccccccccccccccccatotal response: %+v \n", responses)
 
-	}
-	for _, req := range reqs.ContainerRequests {
+	}()
+	fmt.Println("enter allocate")
+	for i, req := range reqs.ContainerRequests {
 		// If the devices being allocated are replicas, then (conditionally)
 		// error out if more than one resource is being allocated.
 		if plugin.config.Sharing.TimeSlicing.FailRequestsGreaterThanOne && rm.AnnotatedIDs(req.DevicesIDs).AnyHasAnnotations() {
@@ -301,8 +294,14 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.
 		if err != nil {
 			return nil, fmt.Errorf("failed to get allocate response: %v", err)
 		}
+		fmt.Println("get GetAnnotation")
+		response.Annotations = plugin.GetAnnotation(i, req.DevicesIDs)
+
+		fmt.Printf("99999999999999999container %i , response: %+v\n", response)
 		responses.ContainerResponses = append(responses.ContainerResponses, response)
+
 	}
+	fmt.Printf("aaaaaaaaaaaaaaaaaaaaaaatotal response: %+v\n", responses)
 
 	return &responses, nil
 }
