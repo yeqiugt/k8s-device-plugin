@@ -3,6 +3,7 @@ package plugin
 import (
 	"fmt"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	"strings"
 )
 
 // container只会使用独占或者mig的GPU，不会同时使用
@@ -62,7 +63,15 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(containerId int, deviceIds []str
 	}
 }
 
-func FormatAnnotation() map[string]string {
+func ParserAnnotation(anotation map[string]string) []string {
+	var deviceIds []string
 
-	return map[string]string{}
+	for key, value := range anotation {
+		if strings.Contains(key, "inspur.com/gpu-index-idx-") {
+			tmp := strings.Split(value, "-")
+			deviceIds = append(deviceIds, tmp...)
+		}
+	}
+
+	return deviceIds
 }

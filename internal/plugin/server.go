@@ -18,6 +18,7 @@ package plugin
 
 import (
 	"fmt"
+	"github.com/NVIDIA/k8s-device-plugin/util"
 	"net"
 	"os"
 	"path"
@@ -269,12 +270,14 @@ func (plugin *NvidiaDevicePlugin) GetPreferredAllocation(ctx context.Context, r 
 // Allocate which return list of devices.
 func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
 	responses := pluginapi.AllocateResponse{}
-	defer func() {
-		fmt.Println("bbbbbbbbbbbbbbbbbbbbbbout allocate")
-		fmt.Printf("ccccccccccccccccccccccatotal response: %+v \n", responses)
 
-	}()
-	fmt.Println("enter allocate")
+	devUsage := util.GetInUseDevice(plugin)
+
+	// 如果annotation已经分配了GPU
+	// 则查看分配的device 是否可用
+	// 可用则直接为其分配物理设备
+	// 不可用则重新分配GPU，打annotation
+
 	for i, req := range reqs.ContainerRequests {
 		// If the devices being allocated are replicas, then (conditionally)
 		// error out if more than one resource is being allocated.
@@ -289,19 +292,29 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.
 				return nil, fmt.Errorf("invalid allocation request for '%s': unknown device: %s", plugin.rm.Resource(), id)
 			}
 		}
+		fmt.Println("333333333333333333", "container ", i, "req ids: ", req.DevicesIDs)
 
-		response, err := plugin.getAllocateResponse(req.DevicesIDs)
+		found, candidatePod, candidateContainer, candidateContainerIdx, err := util.GetContainer(req.DevicesIDs)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println("555555555555555 candidate Pod: ", candidatePod.Name, " cantiner:  ", candidateContainer.Name, " Idx:  ", candidateContainerIdx)
+		devAlloc, err := util.GetAllocDevice(found, devUsage, req.DevicesIDs)
+		if err != nil {
+			return nil, err
+		}
+
+		response, err := plugin.getAllocateResponse(devAlloc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get allocate response: %v", err)
 		}
 		fmt.Println("get GetAnnotation")
-		response.Annotations = plugin.GetAnnotation(i, req.DevicesIDs)
+		response.Annotations = plugin.GetAnnotation(i, devAlloc)
 
 		fmt.Printf("99999999999999999container %i , response: %+v\n", response)
 		responses.ContainerResponses = append(responses.ContainerResponses, response)
 
 	}
-	fmt.Printf("aaaaaaaaaaaaaaaaaaaaaaatotal response: %+v\n", responses)
 
 	return &responses, nil
 }
