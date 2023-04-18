@@ -1,11 +1,11 @@
-package util
+package plugin
 
 import (
 	"fmt"
-	"github.com/NVIDIA/k8s-device-plugin/internal/plugin"
+	"github.com/NVIDIA/k8s-device-plugin/util"
 )
 
-func GetInUseDevice(plugin *plugin.NvidiaDevicePlugin) map[string]bool {
+func GetInUseDevice(plugin *NvidiaDevicePlugin) map[string]bool {
 	fmt.Println("22222222222222222 all device List ")
 	devUsage := make(map[string]bool, 0)
 	deviceList := plugin.Devices()
@@ -15,8 +15,8 @@ func GetInUseDevice(plugin *plugin.NvidiaDevicePlugin) map[string]bool {
 	}
 
 	// 4. 获取vcuda占用的设备
-	k8sclient, hostname, err := GetClientAndHostName()
-	inUsedDev, err := GetVCudaDevice(k8sclient, hostname)
+	k8sclient, hostname, err := util.GetClientAndHostName()
+	inUsedDev, err := util.GetVCudaDevice(k8sclient, hostname)
 	if err != nil {
 		fmt.Println("GetVCudaDevice err", err)
 	}

@@ -1,9 +1,29 @@
 package plugin
 
 import (
+	"context"
+	"encoding/json"
 	"fmt"
 	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	"github.com/NVIDIA/k8s-device-plugin/util"
+	v1 "k8s.io/api/core/v1"
+	apierr "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/klog/v2"
 	"strings"
+	"time"
+)
+
+type PatchType string
+
+const (
+	JSONPatchType           PatchType = "application/json-patch+json"
+	MergePatchType          PatchType = "application/merge-patch+json"
+	StrategicMergePatchType PatchType = "application/strategic-merge-patch+json"
+	ApplyPatchType          PatchType = "application/apply-patch+yaml"
 )
 
 // container只会使用独占或者mig的GPU，不会同时使用
@@ -22,7 +42,7 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(containerId int, deviceIds []str
 
 	for _, deviceId := range deviceIds {
 		fmt.Println("222222222222222222request ids : ", deviceId)
-		reqDevice := devices.GetByID(deviceId)
+		reqDevice := devices.GetByIndex(deviceId)
 
 		fmt.Println("333333333333333333request uuid : ", reqDevice.GetUUID())
 
@@ -63,15 +83,57 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(containerId int, deviceIds []str
 	}
 }
 
-func ParserAnnotation(anotation map[string]string) []string {
+func ParserAnnotation(anotation map[string]string, containerId int) []string {
 	var deviceIds []string
-
+	gpuIdxKey := fmt.Sprintf("inspur.com/gpu-index-idx-%d", containerId)
 	for key, value := range anotation {
-		if strings.Contains(key, "inspur.com/gpu-index-idx-") {
+		if strings.Contains(key, gpuIdxKey) {
 			tmp := strings.Split(value, "-")
 			deviceIds = append(deviceIds, tmp...)
 		}
 	}
 
 	return deviceIds
+}
+
+func PacthPodAnnotation(annotation map[string]string, pod *v1.Pod) error {
+	client, _, _ := util.GetClientAndHostName()
+	waitTimeout := 10 * time.Second
+
+	// update annotations by patching to the pod
+	type patchMetadata struct {
+		Annotations map[string]string `json:"annotations"`
+	}
+	type patchPod struct {
+		Metadata patchMetadata `json:"metadata"`
+	}
+	payload := patchPod{
+		Metadata: patchMetadata{
+			Annotations: annotation,
+		},
+	}
+
+	payloadBytes, _ := json.Marshal(payload)
+	err := wait.PollImmediate(time.Second, waitTimeout, func() (bool, error) {
+		_, err := client.CoreV1().Pods(pod.Namespace).
+			Patch(context.Background(), pod.Name, types.PatchType(StrategicMergePatchType), payloadBytes, metav1.PatchOptions{})
+		if err == nil {
+			return true, nil
+		}
+		if ShouldRetry(err) {
+			return false, nil
+		}
+
+		return false, err
+	})
+	if err != nil {
+		msg := fmt.Sprintf("failed to add annotation %v to pod %s due to %s",
+			annotation, pod.UID, err.Error())
+		klog.Infof(msg)
+		return fmt.Errorf(msg)
+	}
+	return nil
+}
+func ShouldRetry(err error) bool {
+	return apierr.IsConflict(err) || apierr.IsServerTimeout(err)
 }

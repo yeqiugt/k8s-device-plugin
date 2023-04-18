@@ -19,11 +19,13 @@ package plugin
 import (
 	"fmt"
 	"github.com/NVIDIA/k8s-device-plugin/util"
+	v1 "k8s.io/api/core/v1"
 	"net"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	spec "github.com/NVIDIA/k8s-device-plugin/api/config/v1"
@@ -60,6 +62,7 @@ type NvidiaDevicePlugin struct {
 	server *grpc.Server
 	health chan *rm.Device
 	stop   chan interface{}
+	lock   sync.Mutex
 }
 
 // NewNvidiaDevicePlugin returns an initialized NvidiaDevicePlugin
@@ -83,6 +86,7 @@ func NewNvidiaDevicePlugin(config *spec.Config, resourceManager rm.ResourceManag
 		server: nil,
 		health: nil,
 		stop:   nil,
+		lock:   sync.Mutex{},
 	}
 }
 
@@ -269,13 +273,20 @@ func (plugin *NvidiaDevicePlugin) GetPreferredAllocation(ctx context.Context, r 
 
 // Allocate which return list of devices.
 func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.AllocateRequest) (*pluginapi.AllocateResponse, error) {
+	plugin.lock.Lock()
+	defer plugin.lock.Unlock()
+
 	responses := pluginapi.AllocateResponse{}
 
-	devUsage := util.GetInUseDevice(plugin)
+	devUsage := GetInUseDevice(plugin)
 
-	// 如果annotation已经分配了GPU
-	// 则查看分配的device 是否可用
-	// 可用则直接为其分配物理设备
+	predictCorrect := true
+	var predictPod *v1.Pod
+	predictAnnotation := make(map[string]string)
+	// 对每一个container，
+	// 		如果annotation已经分配了GPU
+	// 		则查看分配的device 是否可用
+	// 		可用则直接为其分配物理设备
 	// 不可用则重新分配GPU，打annotation
 
 	for i, req := range reqs.ContainerRequests {
@@ -299,23 +310,60 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.
 			return nil, err
 		}
 		fmt.Println("555555555555555 candidate Pod: ", candidatePod.Name, " cantiner:  ", candidateContainer.Name, " Idx:  ", candidateContainerIdx)
-		devAlloc, err := util.GetAllocDevice(found, devUsage, req.DevicesIDs)
-		if err != nil {
-			return nil, err
+
+		// 根据annotation判断是否被预测过
+		predictDeviceIds := ParserAnnotation(candidatePod.Annotations, candidateContainerIdx)
+		fmt.Println("predictDeviceIds: ", predictDeviceIds)
+		// 如果未取到，说明没预测过
+		if len(predictDeviceIds) == 0 {
+			predictCorrect = false
+			predictPod = candidatePod
 		}
-
-		response, err := plugin.getAllocateResponse(devAlloc)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get allocate response: %v", err)
+		// 如果找到了但是现在设备已经不可用了，说明预测失败，也需要重新预测
+		for _, dev := range predictDeviceIds {
+			if inUse, ok := devUsage[dev]; ok && inUse {
+				predictCorrect = false
+				predictPod = candidatePod
+			}
 		}
-		fmt.Println("get GetAnnotation")
-		response.Annotations = plugin.GetAnnotation(i, devAlloc)
+		// 如果预测成功，就直接按照预测的GPU分配
+		if predictCorrect {
+			response, err := plugin.getAllocateResponse(predictDeviceIds)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get allocate response: %v", err)
+			}
+			fmt.Printf("99999999999999999container %i , response: %+v\n", response)
+			responses.ContainerResponses = append(responses.ContainerResponses, response)
+		} else {
 
-		fmt.Printf("99999999999999999container %i , response: %+v\n", response)
-		responses.ContainerResponses = append(responses.ContainerResponses, response)
+			devAlloc, err := GetAllocDevice(found, devUsage, req.DevicesIDs)
+			if err != nil {
+				return nil, err
+			}
+			fmt.Println("get GetAnnotation")
+			for k, v := range plugin.GetAnnotation(i, devAlloc) {
+				predictAnnotation[k] = v
+			}
 
+			response, err := plugin.getAllocateResponse(devAlloc)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get allocate response: %v", err)
+			}
+
+			fmt.Printf("99999999999999999container %i , response: %+v\n", response)
+			responses.ContainerResponses = append(responses.ContainerResponses, response)
+		}
 	}
-
+	if predictCorrect == false {
+		fmt.Println("patch annotation, pod: ", predictPod.Name, "annotation: ", predictAnnotation)
+		err := PacthPodAnnotation(predictAnnotation, predictPod)
+		if err != nil {
+			fmt.Println("patch err:", err)
+		}
+		fmt.Println("patch annotation pod successed, return false response")
+		return nil, fmt.Errorf("patch pod annotation")
+	}
+	fmt.Println("predicted successed, return response")
 	return &responses, nil
 }
 
