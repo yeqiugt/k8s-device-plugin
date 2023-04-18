@@ -280,7 +280,6 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.
 
 	devUsage := GetInUseDevice(plugin)
 
-	predictCorrect := true
 	var predictPod *v1.Pod
 	predictAnnotation := make(map[string]string)
 	// 对每一个container，
@@ -310,65 +309,44 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.
 			return nil, err
 		}
 		fmt.Println("555555555555555 candidate Pod: ", candidatePod.Name, " cantiner:  ", candidateContainer.Name, " Idx:  ", candidateContainerIdx)
-
-		// 根据annotation判断是否被预测过
-		predictDeviceIds := ParserAnnotation(candidatePod.Annotations, candidateContainerIdx)
-		fmt.Println("predictDeviceIds: ", predictDeviceIds)
-		// 如果未取到，说明没预测过
-		if len(predictDeviceIds) == 0 {
-			predictCorrect = false
-			predictPod = candidatePod
-		}
-		// 如果找到了但是现在设备已经不可用了，说明预测失败，也需要重新预测
-		for _, dev := range predictDeviceIds {
-			if inUse, ok := devUsage[dev]; ok && inUse {
-				predictCorrect = false
-				predictPod = candidatePod
-			}
-		}
+		predictPod = candidatePod
 		// 如果预测成功，就直接按照预测的GPU分配
-		if predictCorrect {
-			response, err := plugin.getAllocateResponse(predictDeviceIds)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get allocate response: %v", err)
-			}
-			fmt.Printf("99999999999999999container %i , response: %+v\n", response)
-			responses.ContainerResponses = append(responses.ContainerResponses, response)
-		} else {
 
-			devAlloc, err := GetAllocDevice(found, devUsage, req.DevicesIDs)
-			if err != nil {
-				return nil, err
-			}
-			fmt.Println("get GetAnnotation")
-			for k, v := range plugin.GetAnnotation(i, devAlloc) {
-				predictAnnotation[k] = v
-			}
-
-			response, err := plugin.getAllocateResponse(devAlloc)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get allocate response: %v", err)
-			}
-
-			fmt.Printf("99999999999999999container %i , response: %+v\n", response)
-			responses.ContainerResponses = append(responses.ContainerResponses, response)
-		}
-	}
-	if predictCorrect == false {
-		fmt.Println("patch annotation, pod: ", predictPod.Name, "annotation: ", predictAnnotation)
-		err := PacthPodAnnotation(predictAnnotation, predictPod)
+		devAlloc, err := GetAllocDevice(found, devUsage, req.DevicesIDs)
 		if err != nil {
-			fmt.Println("patch err:", err)
+			return nil, err
 		}
-		fmt.Println("patch annotation pod successed, return false response")
-		return nil, fmt.Errorf("patch pod annotation")
+
+		fmt.Println("get GetAnnotation")
+		for k, v := range plugin.GetAnnotation(i, devAlloc) {
+			predictAnnotation[k] = v
+			fmt.Println(k, " : ", v)
+		}
+
+		response, err := plugin.getAllocateResponse(devAlloc)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get allocate response: %v", err)
+		}
+
+		fmt.Printf("99999999999999999container %i , response: %+v\n", i, response)
+		responses.ContainerResponses = append(responses.ContainerResponses, response)
 	}
-	fmt.Println("predicted successed, return response")
+	fmt.Println("patch annotation, pod: ", predictPod.Name, "annotation: ", predictAnnotation)
+	for k, v := range predictPod.Annotations {
+		predictAnnotation[k] = v
+	}
+	err := PacthPodAnnotation(predictAnnotation, predictPod)
+	if err != nil {
+		fmt.Println("patch err:", err)
+	}
 	return &responses, nil
 }
 
 func (plugin *NvidiaDevicePlugin) getAllocateResponse(requestIds []string) (*pluginapi.ContainerAllocateResponse, error) {
-	deviceIDs := plugin.deviceIDsFromAnnotatedDeviceIDs(requestIds)
+	// deviceIDs := plugin.deviceIDsFromAnnotatedDeviceIDs(requestIds)
+	deviceIDs := requestIds
+	fmt.Println("7777777777777777777requestIds : ", requestIds)
+	fmt.Println("77777777777777777deviceIds: ", deviceIDs)
 
 	responseID := uuid.New().String()
 	response, err := plugin.getAllocateResponseForCDI(responseID, deviceIDs)

@@ -56,6 +56,7 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(containerId int, deviceIds []str
 			// handle gpu
 			nvmlDevice, _ := nvml.DeviceGetHandleByUUID(reqDevice.GetUUID())
 			pcieInfo, _ := nvml.DeviceGetPciInfo(nvmlDevice)
+			fmt.Printf("555555555555555555555gpu index: %s, gpu uuid : %s \n", reqDevice.Index, reqDevice.GetUUID())
 
 			fmt.Printf("555555555555555555555gpu index: %s, gpu uuid : %s \n", reqDevice.Index, reqDevice.GetUUID())
 			fmt.Printf("6666666666666666666pcie info : %+v \n", pcieInfo)
