@@ -38,7 +38,7 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(containerId int, deviceIds []str
 
 	gpuModKey := fmt.Sprintf("inspur.com/gpu-mod-idx-%d", containerId)
 	gpuIdxKey := fmt.Sprintf("inspur.com/gpu-index-idx-%d", containerId)
-	gpuPciKey := fmt.Sprintf("inspur.com/gpu-gpuPcieId-%d", containerId)
+	gpuPciKey := fmt.Sprintf("inspur.com/gpu-gpuPcieId-idx-%d", containerId)
 
 	for _, deviceId := range deviceIds {
 		fmt.Println("222222222222222222request ids : ", deviceId)
@@ -60,11 +60,17 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(containerId int, deviceIds []str
 
 			fmt.Printf("555555555555555555555gpu index: %s, gpu uuid : %s \n", reqDevice.Index, reqDevice.GetUUID())
 			fmt.Printf("6666666666666666666pcie info : %+v \n", pcieInfo)
+			fmt.Printf("PciDeviceId : %x\n", pcieInfo.PciDeviceId)
+			fmt.Printf("Device : %x\n", pcieInfo.Device)
+			fmt.Printf("Bus : %x\n", pcieInfo.Bus)
+			fmt.Printf("BusId : %x\n", pcieInfo.BusId)
+			fmt.Printf("BusIdLegacy : %x\n", pcieInfo.BusIdLegacy)
+			fmt.Printf("PciSubSystemId : %x\n", pcieInfo.PciSubSystemId)
 
 			if gpuPcieId == "" {
-				gpuPcieId = fmt.Sprintf("%d", pcieInfo.PciDeviceId)
+				gpuPcieId = fmt.Sprintf("%02x:%02x", pcieInfo.Bus, pcieInfo.Device)
 			} else {
-				gpuPcieId += "-" + fmt.Sprintf("%d", pcieInfo.PciDeviceId)
+				gpuPcieId += "-" + fmt.Sprintf("%02x:%02x", pcieInfo.Bus, pcieInfo.Device)
 			}
 			if gpuIdx == "" {
 				gpuIdx = reqDevice.Index
