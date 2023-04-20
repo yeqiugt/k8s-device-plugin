@@ -3,20 +3,20 @@ package plugin
 import (
 	"context"
 	"fmt"
-	"github.com/NVIDIA/go-nvml/pkg/nvml"
 	"github.com/NVIDIA/k8s-device-plugin/util"
+	"gitlab.com/nvidia/cloud-native/go-nvlib/pkg/nvlib/device"
+	nvlib "gitlab.com/nvidia/cloud-native/go-nvlib/pkg/nvml"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/kubernetes"
+	"k8s.io/klog/v2"
+	"os"
 	"regexp"
 	"strconv"
 	"strings"
-
-	"k8s.io/klog/v2"
-	"os"
 	"time"
 )
 
@@ -264,8 +264,12 @@ func GetMigContainer(plugin *NvidiaDevicePlugin, deviceIds []string) (found bool
 	for _, pod := range candidatePods {
 		fmt.Println(pod.Name)
 	}
-
-	devices := plugin.Devices()
+	reqMigSpec, err := GetReqMigSpec(plugin, deviceIds)
+	if err != nil {
+		fmt.Println("GetReqMigSpec", err)
+		return false, nil, nil, 0, err
+	}
+	fmt.Printf("reqMigSpec %v \n", reqMigSpec)
 	//3. 获取pod，container
 	for _, pod := range candidatePods {
 		if found {
@@ -275,29 +279,19 @@ func GetMigContainer(plugin *NvidiaDevicePlugin, deviceIds []string) (found bool
 			// 根据req.device 拿到mig规格
 			// 根据resource 获取 pod的mig 规格
 			// 比较二者规格，数量是否完全一致
-			migSpec := GetMigResourceOfContainer(&c)
-			if len(migSpec) == 0 || len(deviceIds) != len(migSpec) {
+			podMigSpec := GetMigResourceOfContainer(&c)
+			if len(podMigSpec) == 0 || len(deviceIds) != len(podMigSpec) {
 				continue
 			}
-			// reqMigSpec := make(map[string]string)
-			for _, deviceId := range deviceIds {
-				reqDevice := devices.GetByID(deviceId)
-				if reqDevice == nil {
-					reqDevice = devices.GetByIndex(deviceId)
+			fmt.Printf("pod mig spec:%v \n", podMigSpec)
+			noEqual := true
+			for k1, v2 := range reqMigSpec {
+				if v3, ok := podMigSpec[k1]; !(ok && v2 == v3) {
+					noEqual = false
 				}
-				nvmlDevice, _ := nvml.DeviceGetHandleByUUID(reqDevice.GetUUID())
-				// 获取GPU实例ID
-				gpuInstanceId, result := nvml.DeviceGetGpuInstanceId(nvmlDevice)
-				if result != nvml.SUCCESS {
-					fmt.Printf("Failed to get GPU instance ID: %s\n", nvml.ErrorString(result))
-					continue
-				}
-				profile, result := nvml.DeviceGetGpuInstanceProfileInfo(nvmlDevice, gpuInstanceId)
-				if result != nvml.SUCCESS {
-					fmt.Printf("Failed to get GPU profile ID: %s\n", nvml.ErrorString(result))
-					continue
-				}
-				fmt.Printf("profile %+v", profile)
+			}
+			if noEqual == false {
+				continue
 			}
 			candidatePod = pod
 			candidateContainer = &candidatePod.Spec.Containers[i]
@@ -313,8 +307,59 @@ func GetMigResourceOfContainer(container *v1.Container) map[string]string {
 	migSpec := make(map[string]string)
 	for key, value := range container.Resources.Limits {
 		if strings.Contains(string(key), MIGANNOTATION) {
-			migSpec[string(key)] = value.String()
+			profile := strings.Split(string(key), "-")
+			if len(profile) != 2 {
+				return nil
+			}
+			migSpec[profile[1]] = value.String()
 		}
 	}
 	return migSpec
+}
+
+func GetReqMigSpec(plugin *NvidiaDevicePlugin, deviceIds []string) (map[string]string, error) {
+	nvmllib := nvlib.New()
+	ret := nvmllib.Init()
+	if ret != nvlib.SUCCESS {
+		fmt.Println("nvlib init err")
+	}
+	defer func() {
+		ret := nvmllib.Shutdown()
+		if ret != nvlib.SUCCESS {
+			fmt.Println("Error shutting down NVML: %v", ret)
+		}
+	}()
+	devicelib := device.New(
+		device.WithNvml(nvmllib),
+	)
+
+	devices := plugin.Devices()
+	reqMigSpec := make(map[string]string)
+	for _, deviceId := range deviceIds {
+		reqDevice := devices.GetByID(deviceId)
+		if reqDevice == nil {
+			reqDevice = devices.GetByIndex(deviceId)
+		}
+		//fmt.Printf("devices : %f/n", reqDevice)
+
+		migDevice, err := devicelib.NewMigDeviceByUUID(reqDevice.GetUUID())
+		if err != nil {
+			return nil, err
+		}
+		profile, err := migDevice.GetProfile()
+		if err != nil {
+			return nil, err
+		}
+		//fmt.Println("profile: ", profile.String())
+		if value, ok := reqMigSpec[profile.String()]; ok {
+			i, err2 := strconv.Atoi(value)
+			if err2 != nil {
+				return nil, err
+			}
+			reqMigSpec[profile.String()] = fmt.Sprintf("%d", i+1)
+		} else {
+			reqMigSpec[profile.String()] = "1"
+		}
+	}
+	return reqMigSpec, nil
 }
