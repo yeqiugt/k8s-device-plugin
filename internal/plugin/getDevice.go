@@ -12,11 +12,12 @@ func GetInUseDevice(plugin *NvidiaDevicePlugin) map[string]bool {
 	for _, d := range deviceList {
 		devUsage[d.Index] = false
 		fmt.Println(d.Index)
+		fmt.Println(d.GetUUID())
 	}
 
 	// 4. 获取vcuda占用的设备
 	k8sclient, hostname, err := util.GetClientAndHostName()
-	inUsedDev, err := util.GetVCudaDevice(k8sclient, hostname)
+	inUsedDev, err := GetVCudaDevice(k8sclient, hostname)
 	if err != nil {
 		fmt.Println("GetVCudaDevice err", err)
 	}

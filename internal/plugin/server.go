@@ -18,7 +18,6 @@ package plugin
 
 import (
 	"fmt"
-	"github.com/NVIDIA/k8s-device-plugin/util"
 	v1 "k8s.io/api/core/v1"
 	"net"
 	"os"
@@ -304,10 +303,15 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.
 		}
 		fmt.Println("333333333333333333", "container ", i, "req ids: ", req.DevicesIDs)
 
-		found, candidatePod, candidateContainer, candidateContainerIdx, err := util.GetContainer(req.DevicesIDs)
-		if err != nil {
-			return nil, err
+		found, candidatePod, candidateContainer, candidateContainerIdx, err := GetContainer(req.DevicesIDs)
+		if err != nil || !found {
+			fmt.Println("nvidia not found", err, found)
+			found, candidatePod, candidateContainer, candidateContainerIdx, err = GetMigContainer(plugin, req.DevicesIDs)
+			if err != nil || !found {
+				return nil, fmt.Errorf("candidatePod not found")
+			}
 		}
+
 		fmt.Println("555555555555555 candidate Pod: ", candidatePod.Name, " cantiner:  ", candidateContainer.Name, " Idx:  ", candidateContainerIdx)
 		predictPod = candidatePod
 		// 如果预测成功，就直接按照预测的GPU分配

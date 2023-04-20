@@ -1,8 +1,10 @@
-package util
+package plugin
 
 import (
 	"context"
 	"fmt"
+	"github.com/NVIDIA/go-nvml/pkg/nvml"
+	"github.com/NVIDIA/k8s-device-plugin/util"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -20,6 +22,7 @@ import (
 
 const (
 	NVIDIAAnnotation              = "nvidia.com/gpu"
+	MIGANNOTATION                 = "nvidia.com/mig"
 	VCoreAnnotation               = "tencent.com/vcuda-core"
 	PreStartContainerCheckErrMsg  = "PreStartContainer check failed"
 	PreStartContainerCheckErrType = "PreStartContainerCheckErr"
@@ -42,6 +45,8 @@ func GetCandidatePods(client kubernetes.Interface, hostname string) ([]*v1.Pod, 
 	if err != nil {
 		return candidatePods, err
 	}
+	//fmt.Println("hostname:", hostname)
+	//fmt.Println("all pods: ", allPods)
 	for _, pod := range allPods {
 		current := pod
 		if IsGPURequiredPod(&current) && !ShouldDelete(&current) {
@@ -103,15 +108,15 @@ func getPodsOnNode(client kubernetes.Interface, hostname string, phase string) (
 }
 func IsGPURequiredPod(pod *v1.Pod) bool {
 	gpu := GetGPUResourceOfPod(pod, NVIDIAAnnotation)
+	mig := GetGPUMigResourceOfPod(pod, MIGANNOTATION)
 
 	// Check if pod request for GPU resource
-	if gpu <= 0 {
+	if gpu <= 0 && mig <= 0 {
 		klog.V(4).Infof("Pod %s in namespace %s does not Request for NVIDIA GPU resource",
 			pod.Name,
 			pod.Namespace)
 		return false
 	}
-
 	return true
 }
 
@@ -139,6 +144,20 @@ func GetGPUResourceOfPod(pod *v1.Pod, resourceName v1.ResourceName) uint {
 	}
 	return total
 }
+
+func GetGPUMigResourceOfPod(pod *v1.Pod, resourceName string) uint {
+	var total uint
+	containers := pod.Spec.Containers
+	for _, container := range containers {
+		for key, value := range container.Resources.Limits {
+			if strings.Contains(string(key), resourceName) {
+				total = uint(value.Value())
+			}
+		}
+	}
+	return total
+}
+
 func ShouldDelete(pod *v1.Pod) bool {
 	for _, status := range pod.Status.ContainerStatuses {
 		if status.State.Waiting != nil &&
@@ -195,7 +214,7 @@ func IsValidGPUPath(path string) bool {
 
 func GetContainer(deviceIds []string) (found bool, candidatePod *v1.Pod, candidateContainer *v1.Container, candidateContainerIdx int, err error) {
 
-	k8sclient, hostname, err := GetClientAndHostName()
+	k8sclient, hostname, err := util.GetClientAndHostName()
 	// 2. 获取CandidatePods
 	candidatePods, err := GetCandidatePods(k8sclient, hostname)
 	if err != nil {
@@ -230,4 +249,72 @@ func GetContainer(deviceIds []string) (found bool, candidatePod *v1.Pod, candida
 		}
 	}
 	return
+}
+
+func GetMigContainer(plugin *NvidiaDevicePlugin, deviceIds []string) (found bool, candidatePod *v1.Pod, candidateContainer *v1.Container, candidateContainerIdx int, err error) {
+
+	k8sclient, hostname, err := util.GetClientAndHostName()
+	// 2. 获取CandidatePods
+	candidatePods, err := GetCandidatePods(k8sclient, hostname)
+	if err != nil {
+		fmt.Println("GetCandidatePods err", err)
+		return
+	}
+	fmt.Println("11111111111111111111  candidatePods")
+	for _, pod := range candidatePods {
+		fmt.Println(pod.Name)
+	}
+
+	devices := plugin.Devices()
+	//3. 获取pod，container
+	for _, pod := range candidatePods {
+		if found {
+			break
+		}
+		for i, c := range pod.Spec.Containers {
+			// 根据req.device 拿到mig规格
+			// 根据resource 获取 pod的mig 规格
+			// 比较二者规格，数量是否完全一致
+			migSpec := GetMigResourceOfContainer(&c)
+			if len(migSpec) == 0 || len(deviceIds) != len(migSpec) {
+				continue
+			}
+			// reqMigSpec := make(map[string]string)
+			for _, deviceId := range deviceIds {
+				reqDevice := devices.GetByID(deviceId)
+				if reqDevice == nil {
+					reqDevice = devices.GetByIndex(deviceId)
+				}
+				nvmlDevice, _ := nvml.DeviceGetHandleByUUID(reqDevice.GetUUID())
+				// 获取GPU实例ID
+				gpuInstanceId, result := nvml.DeviceGetGpuInstanceId(nvmlDevice)
+				if result != nvml.SUCCESS {
+					fmt.Printf("Failed to get GPU instance ID: %s\n", nvml.ErrorString(result))
+					continue
+				}
+				profile, result := nvml.DeviceGetGpuInstanceProfileInfo(nvmlDevice, gpuInstanceId)
+				if result != nvml.SUCCESS {
+					fmt.Printf("Failed to get GPU profile ID: %s\n", nvml.ErrorString(result))
+					continue
+				}
+				fmt.Printf("profile %+v", profile)
+			}
+			candidatePod = pod
+			candidateContainer = &candidatePod.Spec.Containers[i]
+			candidateContainerIdx = i
+			found = true
+			break
+		}
+	}
+	return
+}
+
+func GetMigResourceOfContainer(container *v1.Container) map[string]string {
+	migSpec := make(map[string]string)
+	for key, value := range container.Resources.Limits {
+		if strings.Contains(string(key), MIGANNOTATION) {
+			migSpec[string(key)] = value.String()
+		}
+	}
+	return migSpec
 }

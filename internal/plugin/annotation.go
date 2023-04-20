@@ -9,7 +9,6 @@ import (
 	v1 "k8s.io/api/core/v1"
 	apierr "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/klog/v2"
@@ -43,12 +42,44 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(containerId int, deviceIds []str
 	for _, deviceId := range deviceIds {
 		fmt.Println("222222222222222222request ids : ", deviceId)
 		reqDevice := devices.GetByIndex(deviceId)
-
+		if reqDevice == nil {
+			reqDevice = devices.GetByID(deviceId)
+		}
 		fmt.Println("333333333333333333request uuid : ", reqDevice.GetUUID())
 
 		fmt.Println("44444444444444444is mig ?", reqDevice.IsMigDevice())
 		if reqDevice.IsMigDevice() {
+			//nvml.DeviceGetDeviceHandleFromMigDeviceHandle()
+			//nvmlDevice, _ := nvml.DeviceGetHandleByUUID(reqDevice.GetUUID())
+			//pcieInfo, _ := nvml.DeviceGetPciInfo(nvmlDevice)
+			//fmt.Printf("pcieInfo %+v: ", pcieInfo)
+			//busId := parseBusId(pcieInfo.BusId)
+			//// 获取父物理设备句柄
+			//parent, _ := nvml.DeviceGetHandleByPciBusId(busId[:len(busId)-2])
+			//parentUUid, _ := parent.GetUUID()
 
+			//fmt.Println("parent device uuid:", parentUUid)
+
+			// 获取父设备ID
+			nvmlDevice, _ := nvml.DeviceGetHandleByUUID(reqDevice.GetUUID())
+			parentDevice, _ := nvmlDevice.GetDeviceHandleFromMigDeviceHandle()
+			parentuuid, _ := parentDevice.GetUUID()
+			fmt.Println("anouther parent device uuid:", parentuuid)
+
+			pcieInfoParent, _ := nvml.DeviceGetPciInfo(parentDevice)
+			if gpuPcieId == "" {
+				gpuPcieId = fmt.Sprintf("%02x:%02x", pcieInfoParent.Bus, pcieInfoParent.Device)
+			} else {
+				gpuPcieId += "-" + fmt.Sprintf("%02x:%02x", pcieInfoParent.Bus, pcieInfoParent.Device)
+			}
+
+			index, _ := parentDevice.GetIndex()
+			fmt.Println("index :", index)
+			if gpuIdx == "" {
+				gpuIdx = fmt.Sprintf("%d", index)
+			} else {
+				gpuIdx += "-" + fmt.Sprintf("%d", index)
+			}
 			// handle mig
 			gpuMod = "mig"
 
@@ -56,16 +87,16 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(containerId int, deviceIds []str
 			// handle gpu
 			nvmlDevice, _ := nvml.DeviceGetHandleByUUID(reqDevice.GetUUID())
 			pcieInfo, _ := nvml.DeviceGetPciInfo(nvmlDevice)
-			fmt.Printf("555555555555555555555gpu index: %s, gpu uuid : %s \n", reqDevice.Index, reqDevice.GetUUID())
+			/*			fmt.Printf("555555555555555555555gpu index: %s, gpu uuid : %s \n", reqDevice.Index, reqDevice.GetUUID())
 
-			fmt.Printf("555555555555555555555gpu index: %s, gpu uuid : %s \n", reqDevice.Index, reqDevice.GetUUID())
-			fmt.Printf("6666666666666666666pcie info : %+v \n", pcieInfo)
-			fmt.Printf("PciDeviceId : %x\n", pcieInfo.PciDeviceId)
-			fmt.Printf("Device : %x\n", pcieInfo.Device)
-			fmt.Printf("Bus : %x\n", pcieInfo.Bus)
-			fmt.Printf("BusId : %x\n", pcieInfo.BusId)
-			fmt.Printf("BusIdLegacy : %x\n", pcieInfo.BusIdLegacy)
-			fmt.Printf("PciSubSystemId : %x\n", pcieInfo.PciSubSystemId)
+						fmt.Printf("555555555555555555555gpu index: %s, gpu uuid : %s \n", reqDevice.Index, reqDevice.GetUUID())
+						fmt.Printf("6666666666666666666pcie info : %+v \n", pcieInfo)
+						fmt.Printf("PciDeviceId : %x\n", pcieInfo.PciDeviceId)
+						fmt.Printf("Device : %x\n", pcieInfo.Device)
+						fmt.Printf("Bus : %x\n", pcieInfo.Bus)
+						fmt.Printf("BusId : %x\n", pcieInfo.BusId)
+						fmt.Printf("BusIdLegacy : %x\n", pcieInfo.BusIdLegacy)
+						fmt.Printf("PciSubSystemId : %x\n", pcieInfo.PciSubSystemId)*/
 
 			if gpuPcieId == "" {
 				gpuPcieId = fmt.Sprintf("%02x:%02x", pcieInfo.Bus, pcieInfo.Device)
@@ -143,4 +174,21 @@ func PacthPodAnnotation(annotation map[string]string, pod *v1.Pod) error {
 }
 func ShouldRetry(err error) bool {
 	return apierr.IsConflict(err) || apierr.IsServerTimeout(err)
+}
+
+func parseBusId(busId [32]int8) string {
+	// 将数组转换为字符串类型
+	var str string
+	for i := 0; i < len(busId) && busId[i] != 0; i += 2 {
+		// 将两个字节解释为一个十六进制数字字符
+		num := fmt.Sprintf("%c%c", busId[i], busId[i+1])
+		str += num
+		// 在每两个字节之间插入一个冒号
+		if i+2 < len(busId) && busId[i+2] != 0 {
+			str += ":"
+		}
+	}
+	fmt.Println("busId: " + str) // 输出: "0000:81:00.0"
+
+	return str
 }
