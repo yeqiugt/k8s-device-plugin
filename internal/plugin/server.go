@@ -281,11 +281,6 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.
 
 	var predictPod *v1.Pod
 	predictAnnotation := make(map[string]string)
-	// 对每一个container，
-	// 		如果annotation已经分配了GPU
-	// 		则查看分配的device 是否可用
-	// 		可用则直接为其分配物理设备
-	// 不可用则重新分配GPU，打annotation
 
 	for i, req := range reqs.ContainerRequests {
 		// If the devices being allocated are replicas, then (conditionally)
@@ -314,7 +309,6 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.
 
 		fmt.Println("555555555555555 candidate Pod: ", candidatePod.Name, " cantiner:  ", candidateContainer.Name, " Idx:  ", candidateContainerIdx)
 		predictPod = candidatePod
-		// 如果预测成功，就直接按照预测的GPU分配
 
 		devAlloc, err := GetAllocDevice(found, devUsage, req.DevicesIDs)
 		if err != nil {

@@ -23,7 +23,10 @@ func GetInUseDevice(plugin *NvidiaDevicePlugin) map[string]bool {
 	}
 	fmt.Println("4444444444444 vcuda in use device", inUsedDev)
 	for _, dev := range inUsedDev {
-		devUsage[dev] = true
+		// 避免引入nvidia-device-plugin不认识的device IDs
+		if _, ok := devUsage[dev]; ok {
+			devUsage[dev] = true
+		}
 	}
 	return devUsage
 
@@ -53,7 +56,8 @@ func GetAllocDevice(found bool, devUsage map[string]bool, reqDeviceIds []string)
 		}
 	}
 	if len(reqDeviceIds) != len(devAlloc) {
-		fmt.Println("6666666666666666alloc err ")
+		fmt.Println("6666666666666666alloc err, no enough device to allocate")
+		return nil, fmt.Errorf("alloc err, no enough free device to allocate")
 	}
 	fmt.Println("66666666666666666", devAlloc)
 	return devAlloc, nil
