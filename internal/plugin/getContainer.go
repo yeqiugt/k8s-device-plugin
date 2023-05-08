@@ -23,13 +23,13 @@ import (
 const (
 	NVIDIAAnnotation              = "nvidia.com/gpu"
 	MIGANNOTATION                 = "nvidia.com/mig"
-	VCoreAnnotation               = "tencent.com/vcuda-core"
+	VCoreAnnotation               = "inspur.com/vcuda-core"
 	PreStartContainerCheckErrMsg  = "PreStartContainer check failed"
 	PreStartContainerCheckErrType = "PreStartContainerCheckErr"
 	UnexpectedAdmissionErrType    = "UnexpectedAdmissionError"
-	PredicateTimeAnnotation       = "tencent.com/predicate-time"
-	PredicateGPUIndexPrefix       = "tencent.com/predicate-gpu-idx-"
-	GPUAssigned                   = "tencent.com/gpu-assigned"
+	PredicateTimeAnnotation       = "inspur.com/predicate-time"
+	PredicateGPUIndexPrefix       = "inspur.com/predicate-gpu-idx-"
+	GPUAssigned                   = "inspur.com/gpu-assigned"
 )
 
 const (
