@@ -26,7 +26,7 @@ const (
 )
 
 // container只会使用独占或者mig的GPU，不会同时使用
-func (plugin *NvidiaDevicePlugin) GetAnnotation(containerId int, deviceIds []string) map[string]string {
+func (plugin *NvidiaDevicePlugin) GetAnnotation(candidatePod v1.Pod, containerId int, deviceIds []string) map[string]string {
 	devices := plugin.Devices()
 	fmt.Println("111111111111111all device ids:", devices.GetIDs())
 	var (
@@ -38,6 +38,11 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(containerId int, deviceIds []str
 	gpuModKey := fmt.Sprintf("inspur.com/gpu-mod-idx-%d", containerId)
 	gpuIdxKey := fmt.Sprintf("inspur.com/gpu-index-idx-%d", containerId)
 	gpuPciKey := fmt.Sprintf("inspur.com/gpu-gpuPcieId-idx-%d", containerId)
+
+	existAnnotation := candidatePod.Annotations
+	gpuIdx = existAnnotation[gpuIdxKey]
+	gpuPcieId = existAnnotation[gpuPciKey]
+	// gpuMod = existAnnotation[gpuModKey]
 
 	for _, deviceId := range deviceIds {
 		fmt.Println("222222222222222222request ids : ", deviceId)
@@ -67,6 +72,7 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(containerId int, deviceIds []str
 			fmt.Println("anouther parent device uuid:", parentuuid)
 
 			pcieInfoParent, _ := nvml.DeviceGetPciInfo(parentDevice)
+
 			if gpuPcieId == "" {
 				gpuPcieId = fmt.Sprintf("%02x:%02x", pcieInfoParent.Bus, pcieInfoParent.Device)
 			} else {

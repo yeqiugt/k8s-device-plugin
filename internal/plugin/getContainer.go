@@ -280,10 +280,10 @@ func GetMigContainer(plugin *NvidiaDevicePlugin, deviceIds []string) (found bool
 			// 根据resource 获取 pod的mig 规格
 			// 比较二者规格，数量是否完全一致
 			podMigSpec := GetMigResourceOfContainer(&c)
-			if len(podMigSpec) == 0 || len(deviceIds) != len(podMigSpec) {
+			fmt.Printf("pod mig spec:%v \n", podMigSpec)
+			if len(podMigSpec) == 0 {
 				continue
 			}
-			fmt.Printf("pod mig spec:%v \n", podMigSpec)
 			noEqual := true
 			for k1, v2 := range reqMigSpec {
 				if v3, ok := podMigSpec[k1]; !(ok && v2 == v3) {

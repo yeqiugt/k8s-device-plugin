@@ -316,7 +316,7 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.
 		}
 
 		fmt.Println("get GetAnnotation")
-		for k, v := range plugin.GetAnnotation(i, devAlloc) {
+		for k, v := range plugin.GetAnnotation(*candidatePod, i, devAlloc) {
 			predictAnnotation[k] = v
 			fmt.Println(k, " : ", v)
 		}
