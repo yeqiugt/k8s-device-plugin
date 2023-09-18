@@ -33,15 +33,19 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(candidatePod v1.Pod, containerId
 		gpuIdx    string
 		gpuPcieId string
 		gpuMod    string
+		gpuMigId  string
 	)
 
 	gpuModKey := fmt.Sprintf("inspur.com/gpu-mod-idx-%d", containerId)
 	gpuIdxKey := fmt.Sprintf("inspur.com/gpu-index-idx-%d", containerId)
 	gpuPciKey := fmt.Sprintf("inspur.com/gpu-gpuPcieId-idx-%d", containerId)
+	gpuMigKey := fmt.Sprintf("inspur.com/gpu-MigId-idx-%d", containerId)
 
 	existAnnotation := candidatePod.Annotations
 	gpuIdx = existAnnotation[gpuIdxKey]
 	gpuPcieId = existAnnotation[gpuPciKey]
+	gpuMigId = existAnnotation[gpuMigKey]
+
 	// gpuMod = existAnnotation[gpuModKey]
 
 	for _, deviceId := range deviceIds {
@@ -86,6 +90,11 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(candidatePod v1.Pod, containerId
 			} else {
 				gpuIdx += "-" + fmt.Sprintf("%d", index)
 			}
+			if gpuMigId == "" {
+				gpuMigId = fmt.Sprintf("%s", reqDevice.GetUUID())
+			} else {
+				gpuMigId += "-" + fmt.Sprintf("%s", reqDevice.GetUUID())
+			}
 			// handle mig
 			gpuMod = "mig"
 
@@ -124,6 +133,7 @@ func (plugin *NvidiaDevicePlugin) GetAnnotation(candidatePod v1.Pod, containerId
 		gpuModKey: gpuMod,
 		gpuIdxKey: gpuIdx,
 		gpuPciKey: gpuPcieId,
+		gpuMigKey: gpuMigId,
 	}
 }
 
