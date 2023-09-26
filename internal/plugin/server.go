@@ -297,22 +297,26 @@ func (plugin *NvidiaDevicePlugin) Allocate(ctx context.Context, reqs *pluginapi.
 			}
 		}
 		fmt.Println("333333333333333333", "container ", i, "req ids: ", req.DevicesIDs)
-
+		migFound := false
 		found, candidatePod, candidateContainer, candidateContainerIdx, err := GetContainer(req.DevicesIDs)
 		if err != nil || !found {
 			fmt.Println("nvidia not found", err, found)
-			found, candidatePod, candidateContainer, candidateContainerIdx, err = GetMigContainer(plugin, req.DevicesIDs)
-			if err != nil || !found {
+			migFound, candidatePod, candidateContainer, candidateContainerIdx, err = GetMigContainer(plugin, req.DevicesIDs)
+			if err != nil || !migFound {
 				return nil, fmt.Errorf("candidatePod not found")
 			}
 		}
 
 		fmt.Println("555555555555555 candidate Pod: ", candidatePod.Name, " cantiner:  ", candidateContainer.Name, " Idx:  ", candidateContainerIdx)
 		predictPod = candidatePod
-
-		devAlloc, err := GetAllocDevice(found, devUsage, req.DevicesIDs)
-		if err != nil {
-			return nil, err
+		devAlloc := []string{}
+		if migFound {
+			devAlloc = req.DevicesIDs
+		} else {
+			devAlloc, err = GetAllocDevice(found, devUsage, req.DevicesIDs)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		fmt.Println("get GetAnnotation")
