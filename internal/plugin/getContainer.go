@@ -45,8 +45,8 @@ func GetCandidatePods(client kubernetes.Interface, hostname string) ([]*v1.Pod, 
 	if err != nil {
 		return candidatePods, err
 	}
-	//fmt.Println("hostname:", hostname)
-	//fmt.Println("all pods: ", allPods)
+	fmt.Println("hostname: ", hostname)
+	fmt.Println("all pods: ", allPods)
 	for _, pod := range allPods {
 		current := pod
 		if IsGPURequiredPod(&current) && !ShouldDelete(&current) {
